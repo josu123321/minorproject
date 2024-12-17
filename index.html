@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Water Level Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background: #f5f5f5;
+      color: #000;
+      transition: background 0.3s, color 0.3s;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      transition: background 0.3s;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #007bff;
+    }
+    .chart-container {
+      position: relative;
+      height: 400px;
+      margin: 20px auto;
+    }
+    .btn-green {
+      background-color: #217346;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+    }
+    .btn-green:hover {
+      background-color: #1e623b;
+    }
+    .dark-theme {
+      background: #121212;
+      color: #fff;
+    }
+    .dark-theme .container {
+      background: #333;
+    }
+    /* Keep buttons green in dark mode */
+    .dark-theme .btn-green {
+      background-color: #217346 !important;
+      color: white !important;
+    }
+
+    /* Keep other buttons styled appropriately */
+    .dark-theme .btn.btn-primary {
+      background-color: #444;
+      color: #fff;
+      border: none;
+    }
+
+    .theme-toggle {
+      margin: 10px 0;
+    }
+    .theme-toggle .btn {
+      margin-bottom: 10px;
+    }
+    @media (max-width: 768px) {
+      .chart-container {
+        height: 300px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Water Level Dashboard</h1>
+
+    <div id="readings" class="text-center mb-4">
+      <p><strong>Water Level:</strong> <span id="waterLevel">Loading...</span></p>
+    </div>
+
+    <!-- Water Level Chart -->
+    <div class="chart-container">
+      <canvas id="waterLevelChart"></canvas>
+    </div>
+    <div class="dropdown text-center mb-4">
+      <label for="waterLevelCount">Number of Readings:</label>
+      <select id="waterLevelCount" class="form-select" style="width: 150px; display: inline-block;">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+
+    <!-- Theme Toggle Button -->
+    <div class="theme-toggle text-center">
+      <button id="toggleTheme" class="btn btn-primary">🌙 Switch to Dark Mode</button>
+    </div>
+
+    <!-- Download CSV Button -->
+    <div class="download-button text-center">
+      <button id="downloadCsv" class="btn btn-green">Download Data as CSV</button>
+    </div>
+  </div>
+
+  <script>
+    const toggleThemeButton = document.getElementById('toggleTheme');
+    const downloadCsvButton = document.getElementById('downloadCsv');
+    const waterLevelCount = document.getElementById('waterLevelCount');
+
+    let sensorData = [];
+
+    // Provided Channel and API Key
+    const apiKey = "NB3XFC78M7NJAWRR";
+    const channelId = "2787707";
+
+    const createChartConfig = (label, borderColor, backgroundColor) => ({
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: label,
+          data: [],
+          borderColor: borderColor,
+          backgroundColor: backgroundColor,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { 
+            title: { display: true, text: 'Time', color: '#000' }, 
+            ticks: { color: '#000' },
+            grid: { color: '#ccc' } // Light mode grid line color
+          },
+          y: { 
+            title: { display: true, text: label, color: '#000' }, 
+            ticks: { color: '#000' },
+            grid: { color: '#ccc' } // Light mode grid line color
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#000' } },
+          zoom: {
+            pan: { enabled: true, mode: 'x' },
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+          }
+        }
+      }
+    });
+
+    const waterLevelChart = new Chart(
+      document.getElementById('waterLevelChart').getContext('2d'), 
+      createChartConfig('Water Level', 'rgba(54, 162, 235, 1)', 'rgba(54, 162, 235, 0.2)')
+    );
+
+    async function fetchData(count, chart, fieldIndex = 1, updateReadings = false) {
+      const apiUrl = `https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=${count}`;
+      try {
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        const feeds = data.feeds;
+        sensorData = feeds;
+
+        const labels = feeds.map(feed => new Date(feed.created_at).toLocaleTimeString());
+        const dataPoints = feeds.map(feed => parseFloat(feed[`field${fieldIndex}`] || 0));
+
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = dataPoints;
+        chart.update();
+
+        if (updateReadings) {
+          const latestFeed = feeds[feeds.length - 1] || {};
+          document.getElementById('waterLevel').textContent = `${latestFeed.field1 || 'N/A'}`;
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    }
+
+    waterLevelCount.addEventListener('change', () => fetchData(waterLevelCount.value, waterLevelChart, 1, true));
+
+    toggleThemeButton.addEventListener('click', () => {
+      const isDarkTheme = document.body.classList.toggle('dark-theme');
+      toggleThemeButton.textContent = isDarkTheme ? '🌞 Switch to Light Mode' : '🌙 Switch to Dark Mode';
+
+      // Update chart colors for dark mode
+      waterLevelChart.options.scales.x.title.color = isDarkTheme ? '#fff' : '#000';
+      waterLevelChart.options.scales.x.ticks.color = isDarkTheme ? '#fff' : '#000';
+      waterLevelChart.options.scales.x.grid.color = isDarkTheme ? '#fff' : '#ccc';
+      waterLevelChart.options.scales.y.title.color = isDarkTheme ? '#fff' : '#000';
+      waterLevelChart.options.scales.y.ticks.color = isDarkTheme ? '#fff' : '#000';
+      waterLevelChart.options.scales.y.grid.color = isDarkTheme ? '#fff' : '#ccc';
+
+      waterLevelChart.options.plugins.legend.labels.color = isDarkTheme ? '#fff' : '#000';
+      waterLevelChart.update();
+    });
+
+    downloadCsvButton.addEventListener('click', () => {
+      const headers = ['Time', 'Water Level'];
+      const rows = sensorData.map(feed => [feed.created_at, feed.field1 || 'N/A']);
+      const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'water_level_data.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Initial fetch
+    fetchData(10, waterLevelChart, 1, true);
+
+    // Auto-refresh every second
+    setInterval(() => {
+      fetchData(waterLevelCount.value, waterLevelChart, 1, true);
+    }, 1000);
+  </script>
+</body>
+</html>
